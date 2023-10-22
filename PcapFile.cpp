@@ -8,33 +8,108 @@
  */
 #include "PcapFile.hpp"
 
-namespace
+PcapFile::PcapFile(Stream& stream) : Serial(stream)
 {
+    size = 0;
+}
 
-    /**
-     * @brief Constanst according to reference
-     *
-     * @see Ref: https://gitlab.com/wireshark/wireshark/-/wikis/Development/LibpcapFileFormat#global-header
-     */
-constexpr uint32_t SNAPLEN = 65535u;
-constexpr uint32_t PCAP_MAGIC_NUMBER = 0xa1b2c3d4u;
-
-    typedef struct pcap_hdr_s
+void PcapFile::appendFrame(const uint8_t *buffer, size_t frameSize, uint32_t usecTime)
+{
+    const uint8_t * bufferEnd = buffer + frameSize;
+    if(frameSize > SNAPLEN){
+        bufferEnd = buffer + SNAPLEN;
+        size = sizeof(PcapRecordHeader) + SNAPLEN;
+    }
+    else
     {
-        uint32_t magic_number;  /* magic number */
-        uint16_t version_major; /* major version number */
-        uint16_t version_minor; /* minor version number */
-        int32_t thiszone;       /* GMT to local correction */
-        uint32_t sigfigs;       /* accuracy of timestamps */
-        uint32_t snaplen;       /* max length of captured packets, in octets */
-        uint32_t network;       /* data link type */
-    } pcap_hdr_t;
+        size = sizeof(PcapRecordHeader) + frameSize;
+    }
+    std::vector<uint8_t> frame(buffer, bufferEnd);
+    recordsBuffer.emplace_back(PcapRecord{usecTime / 1000000, usecTime % 1000000, frame.size() , frameSize, frame});
+}
 
-    typedef struct pcaprec_hdr_s
+void PcapFile::directSerialOutput(const uint8_t *buffer, size_t frameSize, uint32_t usecTime)
+{
+    uint8_t STX = 0x02; // Start of Text
+    uint8_t ETX = 0x03; // End of Text
+
+    // Calculate checksum (for demonstration, just summing up bytes)
+
+
+    if(frameSize > SNAPLEN)
     {
-        uint32_t ts_sec;   /* timestamp seconds */
-        uint32_t ts_usec;  /* timestamp microseconds */
-        uint32_t incl_len; /* number of octets of packet saved in file */
-        uint32_t orig_len; /* actual length of packet */
-    } pcaprec_hdr_t;
+        //bufferEnd = buffer + SNAPLEN;
+        size = SNAPLEN;
+    }
+    else
+    {
+        size = frameSize;
+    }
+    size = frameSize;
+    // Write STX (Start of Text)
+    Serial.write(STX);
+    // Write existing data
+    size_t dataSize = frameSize + sizeof(PcapRecordHeader);
+    Serial.write((uint8_t*)&dataSize, sizeof(size_t));  // Optional: send the frame size first
+    Serial.write((uint8_t*)&usecTime, sizeof(uint32_t)); // Optional: send the timestamp first
+
+    PcapRecordHeader frameHeader{usecTime / 1000000, usecTime % 1000000, size, frameSize};
+    Serial.write((uint8_t*)&frameHeader, sizeof(PcapRecordHeader));
+    Serial.write(buffer, frameSize);
+    // Write ETX (End of Text)
+    Serial.write(ETX);
+    uint8_t checksum = 0;
+    auto bufferHeader = (uint8_t*)&frameHeader;
+    for (int i = 0; i < sizeof(PcapRecordHeader); ++i) {
+        checksum += bufferHeader[i];
+    }
+    for (int i = 0; i < size; ++i) {
+        checksum += buffer[i];
+    }
+    // Write Checksum
+    Serial.write(checksum);
+}
+
+void PcapFile::writeHeader()
+{
+    uint8_t STX = 0x02; // Start of Text
+    uint8_t ETX = 0x03; // End of Text
+    PcapGlobalHeader globalHeader{PCAP_MAGIC_NUMBER, 2, 4, 0, 0, SNAPLEN, LINKTYPE_IEEE802_11};
+    Serial.write(STX);
+    // Write existing data
+    size_t dataSize = sizeof(PcapGlobalHeader);
+    uint32_t usecTime = 0;
+    Serial.write((uint8_t*)&dataSize, sizeof(size_t));  // Optional: send the frame size first
+    Serial.write((uint8_t*)&usecTime, sizeof(uint32_t)); // Optional: send the timestamp first
+    auto buffer = (uint8_t*)&globalHeader;
+    uint8_t checksum = 0;
+    for (int i = 0; i < sizeof(PcapGlobalHeader); ++i) {
+        checksum += buffer[i];
+    }
+    Serial.write((uint8_t*)&globalHeader, sizeof(PcapGlobalHeader));
+    Serial.write(ETX);
+    // Write Checksum
+    Serial.write(checksum);
+}
+
+
+
+size_t PcapFile::getBufferSize()
+{
+    return size;
+}
+
+bool PcapFile::writeBufferToSerialOutput()
+{
+    PcapGlobalHeader globalHeader{PCAP_MAGIC_NUMBER, 2, 4, 0, 0, SNAPLEN, LINKTYPE_IEEE802_11};
+    Serial.write((uint8_t*)&globalHeader, sizeof(PcapGlobalHeader));
+    for(auto& frame : recordsBuffer)
+    {
+        Serial.write((uint8_t*)&frame, sizeof(PcapRecordHeader));
+        for(auto& byte : frame.data)
+        {
+            Serial.write(byte);
+        }
+    }
+    return true;
 }
