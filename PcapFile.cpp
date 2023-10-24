@@ -30,7 +30,12 @@ void PcapFile::appendFrame(const uint8_t *buffer, size_t frameSize, uint32_t use
 
 void PcapFile::directSerialOutput(const uint8_t *buffer, size_t frameSize, uint32_t usecTime)
 {
-    //const uint8_t * bufferEnd = buffer + frameSize;
+    uint8_t STX = 0x02; // Start of Text
+    uint8_t ETX = 0x03; // End of Text
+
+    // Calculate checksum (for demonstration, just summing up bytes)
+
+
     if(frameSize > SNAPLEN)
     {
         //bufferEnd = buffer + SNAPLEN;
@@ -40,16 +45,51 @@ void PcapFile::directSerialOutput(const uint8_t *buffer, size_t frameSize, uint3
     {
         size = frameSize;
     }
+    size = frameSize;
+    // Write STX (Start of Text)
+    Serial.write(STX);
+    // Write existing data
+    size_t dataSize = frameSize + sizeof(PcapRecordHeader);
+    Serial.write((uint8_t*)&dataSize, sizeof(size_t));  // Optional: send the frame size first
+    Serial.write((uint8_t*)&usecTime, sizeof(uint32_t)); // Optional: send the timestamp first
+
     PcapRecordHeader frameHeader{usecTime / 1000000, usecTime % 1000000, size, frameSize};
     Serial.write((uint8_t*)&frameHeader, sizeof(PcapRecordHeader));
     Serial.write(buffer, frameSize);
+    // Write ETX (End of Text)
+    Serial.write(ETX);
+    uint8_t checksum = 0;
+    auto bufferHeader = (uint8_t*)&frameHeader;
+    for (int i = 0; i < sizeof(PcapRecordHeader); ++i) {
+        checksum += bufferHeader[i];
+    }
+    for (int i = 0; i < size; ++i) {
+        checksum += buffer[i];
+    }
+    // Write Checksum
+    Serial.write(checksum);
 }
 
 void PcapFile::writeHeader()
 {
+    uint8_t STX = 0x02; // Start of Text
+    uint8_t ETX = 0x03; // End of Text
     PcapGlobalHeader globalHeader{PCAP_MAGIC_NUMBER, 2, 4, 0, 0, SNAPLEN, LINKTYPE_IEEE802_11};
-    //Serial.print("\xD4\xC3\xB2\xA1\x02\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xFF\x00\x00\x69\x00\x00\x00");
+    Serial.write(STX);
+    // Write existing data
+    size_t dataSize = sizeof(PcapGlobalHeader);
+    uint32_t usecTime = 0;
+    Serial.write((uint8_t*)&dataSize, sizeof(size_t));  // Optional: send the frame size first
+    Serial.write((uint8_t*)&usecTime, sizeof(uint32_t)); // Optional: send the timestamp first
+    auto buffer = (uint8_t*)&globalHeader;
+    uint8_t checksum = 0;
+    for (int i = 0; i < sizeof(PcapGlobalHeader); ++i) {
+        checksum += buffer[i];
+    }
     Serial.write((uint8_t*)&globalHeader, sizeof(PcapGlobalHeader));
+    Serial.write(ETX);
+    // Write Checksum
+    Serial.write(checksum);
 }
 
 

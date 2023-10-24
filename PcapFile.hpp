@@ -23,6 +23,7 @@
 constexpr uint32_t SNAPLEN = 65535u;
 constexpr uint32_t PCAP_MAGIC_NUMBER = 0b10100001101100101100001111010100u;
 constexpr uint32_t LINKTYPE_IEEE802_11 = 105u;
+constexpr uint32_t DLT_IEEE802_11_RADIO = 127u;
 
 struct PcapGlobalHeader
 {
@@ -32,7 +33,7 @@ struct PcapGlobalHeader
     int32_t thiszone = 0;                      /* GMT to local correction */
     uint32_t sigfigs = 0u;                      /* accuracy of timestamps */
     uint32_t snaplen = SNAPLEN;                /* max length of captured packets, in octets */
-    uint32_t network = LINKTYPE_IEEE802_11;    /* data link type */
+    uint32_t network = DLT_IEEE802_11_RADIO;    /* data link type */
 } __attribute__((packed));;
 
 struct PcapRecordHeader
